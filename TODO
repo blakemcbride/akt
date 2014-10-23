@@ -1,3 +1,7 @@
 Options:
   - Accept MSB control bit for meta/alt.
   - Configurable single-character prefix.
+  - Find process at receiving end of pipe.
+    - Run watchdog (multiplexed w/ key timer) to detect termination.
+    - Trap and forward signals.
+  - Double-check key map against GNU APL and aplwrap.
