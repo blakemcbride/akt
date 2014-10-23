@@ -57,7 +57,7 @@ static const char* map[128] = {
   "⌹", /* + */
   "⍝", /* , */
   "×", /* - */
-  0,   /* . */
+  "⍀", /* . */
   "⌿", /* / */
   "∧", /* 0 */
   "¨", /* 1 */
@@ -73,7 +73,7 @@ static const char* map[128] = {
   "⍎", /* ; */
   "⍪", /* < */
   "÷", /* = */
-  "⍀", /* > */
+  "⍙", /* > */
   "⍠", /* ? */
   "⍫", /* @ */
   "⍶", /* A */
@@ -86,7 +86,7 @@ static const char* map[128] = {
   "⍙", /* H */
   "⍸", /* I */
   "⍤", /* J */
-  "⌺", /* K */
+  "⌸", /* K */
   "⌷", /* L */
   0,   /* M */
   0,   /* N */
@@ -158,8 +158,12 @@ static int esc = 0, csi_pend = 0;
 
 static void
 alarm(int signal) {
-  const char *t = map['['];
-  do_write(t, strlen(t));
+  if (csi_pend) {
+    const char *t = map['['];
+    do_write(t, strlen(t));
+  }
+  else if (esc)
+    do_write("\033", 1);
   esc = csi_pend = 0;
 }
 
@@ -226,7 +230,6 @@ main(int argc, char *argv[]) {
     if (n == 1) {
       if (esc) {
         if (buf[0] == '[') {
-          timer_arm();
           csi_pend = 1;
         }
         else if (csi_pend) {
@@ -245,6 +248,7 @@ main(int argc, char *argv[]) {
         quit = 0;
       }
       else if (buf[0] == 033) {
+        timer_arm();
         esc = 1;
         quit = 0;
       }

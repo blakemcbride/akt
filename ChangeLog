@@ -1,0 +1,4 @@
+2014-10-23  David B. Lamkins  <david@lamkins.net>
+
+	* akt.c (map[], alarm): Correct mappings of A-., A-> and A-K. Set
+	timer on ESC to allow bare ESC to also be passed through.
