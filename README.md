@@ -48,18 +48,21 @@ Because `akt` starts the key timer on receipt of the ESC character
 (without which you wouldn't be able to type a bare ESC), you'll see
 a similar problem if you autorepeat the ESC key.
 
+Finally, be aware that you can't type APL characters by pressing the
+ESC key followed by another character. Again, this is because of
+timing considerations. Use the Alt key on your terminal emulator.
+
 I have no intention to "fix" issues around the key timer; it would
 require a much more sophisticated state machine than is warranted by
 the nature of the "problem".
 
-`akt` has an atypical exit protocol. When you're using `akt` as
-intended, it'll quit when the output pipe disappears after GNU APL
-terminates. (This happens as soon as you type any character after the
-pipe has been broken.)
+`akt` has an atypical exit protocol: when piped into another program,
+`akt` quits when its output pipe disappears or the receiving program
+disappears.
 
-If you run `akt` from the command line, you must either kill it using
-`killall akt` or send `akt` three consecutive NULs; this is typically
-done by typing `Ctrl-backquote`, `Ctrl-@` or `Ctrl-space`.
+When `akt`'s output is piped, a Ctrl-C received by `akt` sends a
+SIGINT to the process on the receiving end of the pipe; the Ctrl-C
+does *not* terminate `akt`.
 
 `akt` compiles and runs on my Fedora 20 Linux boxes. It is also
 reported to have compiled and run on a LinuxMint x64 box. I make no

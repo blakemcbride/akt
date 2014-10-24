@@ -1,4 +1,15 @@
 2014-10-23  David B. Lamkins  <david@lamkins.net>
 
+	* akt.c (handle_key_timer, find_listener, handle_watchdog_timer)
+	(key_timer_arm, key_timer_disarm, initalize, finalize, main):
+	Ctrl-C handling: sends SIGINT to process on receiving end of
+	stdout pipe. If no pipe, Ctrl-C exits akt. Also, akt exits when
+	the process on the receiving end of the stdout pipe exits. NUL
+	input characters (Ctrl-@, Ctrl-` or Ctrl-space) are now passed
+	through to output rather than being used to exit akt.
+	Miscellaneous code cleanup. Bumped version to 1.1.
+
+2014-10-23  David B. Lamkins  <david@lamkins.net>
+
 	* akt.c (map[], alarm): Correct mappings of A-., A-> and A-K. Set
 	timer on ESC to allow bare ESC to also be passed through.

@@ -15,27 +15,32 @@
 #include <libintl.h>
 #include <string.h>
 #include <sys/time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <signal.h>
 #include <errno.h>
+#include <linux/limits.h>
 
 #define PACKAGE "akt"
 #define LOCALEDIR "."
-#define VERSION "1.0"
+#define VERSION "1.1"
 
 static void
 usage(void) {
   fputs(PACKAGE " (APL Keyboard Translator) version " VERSION "\n"
         "\n"
+        "You can use " PACKAGE " with any program that accepts UTF-8\n"
+        "encoded characters on stdin.\n"
+        "\n"
         "Use with GNU APL as:\n"
         "  $ " PACKAGE " | apl\n"
         "\n"
-        "Use the Alt or Esc key to type APL characters.\n"
-        "\n"
-        "Type C-space, C-@ or C-` (this may vary with your\n"
-        "terminal) three times to terminate the program.\n"
-        "\n"
-        "When the output is piped, typing any character after\n"
-        "the pipe has been broken will terminate the program.\n",
+        "Set your terminal emulator to send an ESC prefix when\n"
+        "you use the Alt key. This is often described as \"meta\n"
+        "sends escape\". Disable Alt key acccess to your terminal\n"
+        "emulator's menus. Then hold down the Alt key to type APL\n"
+        "characters.\n",
         stderr);
   exit(1);
 }
@@ -157,7 +162,7 @@ do_write(const void *buf, size_t len) {
 static int esc = 0, csi_pend = 0;
 
 static void
-alarm(int signal) {
+handle_key_timer(int signal) {
   if (csi_pend) {
     const char *t = map['['];
     do_write(t, strlen(t));
@@ -167,51 +172,102 @@ alarm(int signal) {
   esc = csi_pend = 0;
 }
 
+static struct termios tio_old;
+
 static void
-timer_arm(void) {
+finalize(void) {
+  if (tcsetattr(ifd, 0, &tio_old) == -1)
+    perror("tcsetattr");
+}
+
+pid_t listener = 0;
+
+static void
+find_listener(void) {
+  pid_t mypid = getpid();
+  const char *pathfmt = "/proc/%u/fd/%u";
+  char path[PATH_MAX], slink[PATH_MAX], rlink[PATH_MAX];
+  snprintf(path, PATH_MAX, pathfmt, mypid, ofd);
+  if (readlink(path, slink, PATH_MAX) == -1)
+    perror("readlink:slink");
+  if (!strncmp(slink, "pipe:[", 6)) {
+    pid_t tpid = mypid;
+    FILE *pmfd = fopen("/proc/sys/kernel/pid_max", "r");
+    pid_t maxpid = 0;
+    fscanf(pmfd, "%u", &maxpid);
+    fclose(pmfd);
+    int i = 10;
+    while (i) {
+      if (tpid == maxpid) tpid = 1;
+      snprintf(path, PATH_MAX, pathfmt, ++tpid, ifd);
+      if (readlink(path, rlink, PATH_MAX) == -1)
+        continue;
+      if (!strncmp(slink, rlink, PATH_MAX)) break;
+      --i;
+    }
+    if (i) listener = tpid;
+  }
+}
+
+static void
+handle_watchdog_timer(int signal) {
+  if (listener) {
+    char path[PATH_MAX];
+    snprintf(path, PATH_MAX, "/proc/%u", listener);
+    struct stat sbuf;
+    if (stat(path, &sbuf) == -1) {
+      finalize();
+      exit(0);
+    }
+  }
+}
+
+static void
+key_timer_arm(void) {
+  if (signal(SIGALRM, handle_key_timer) == SIG_ERR)
+    perror("key_timer_arm/signal");
+
   struct itimerval timer = { 0 };
   timer.it_value.tv_usec = 50000;
   if (setitimer(ITIMER_REAL, &timer, NULL) == -1)
-    perror("timer_arm/setitimer");
+    perror("key_timer_arm/setitimer");
 }
 
 static void
-timer_disarm(void) {
+key_timer_disarm(void) {
   struct itimerval timer = { 0 };
   if (setitimer(ITIMER_REAL, &timer, NULL) == -1)
-    perror("timer_disarm/setitimer");
-}
+    perror("key_timer_disarm/setitimer:key");
 
-static struct termios old;
+  if (listener) {
+    if (signal(SIGALRM, handle_watchdog_timer) == SIG_ERR)
+      perror("key_timer_disarm/signal");
+
+    timer.it_value.tv_usec = 200000;
+    timer.it_interval.tv_usec = 200000;
+    if (setitimer(ITIMER_REAL, &timer, NULL) == -1)
+      perror("key_timer_disarm/setitimer:watchdog");
+  }
+}
 
 static void
 initialize(void) {
-  struct termios new;
+  struct termios tio_new;
 
   setlocale(LC_ALL, "");
   bindtextdomain(PACKAGE, LOCALEDIR);
   textdomain(PACKAGE);
 
-  if (tcgetattr(ifd, &old) == -1)
+  if (tcgetattr(ifd, &tio_old) == -1)
     perror("tcgetattr");
-  if (tcgetattr(ifd, &new) == -1)
-    perror("tcgetattr");
+  memcpy(&tio_new, &tio_old, sizeof(struct termios));
 
-  new.c_lflag &= ~ (ICANON | ISIG | ECHO | ECHOCTL);
-  new.c_iflag = ICRNL;
-  new.c_cc[VMIN] = 1;
-  new.c_cc[VTIME] = 0;
+  tio_new.c_lflag &= ~ (ICANON | ISIG | ECHO | ECHOCTL);
+  tio_new.c_iflag = ICRNL;
+  tio_new.c_cc[VMIN] = 1;
+  tio_new.c_cc[VTIME] = 0;
 
-  if (tcsetattr(ifd, TCSAFLUSH, &new) == -1)
-    perror("tcgetattr");
-
-  if (signal(SIGALRM, alarm) == SIG_ERR)
-    perror("signal");
-}
-
-static void
-finalize(void) {
-  if (tcsetattr(ifd, 0, &old) == -1)
+  if (tcsetattr(ifd, TCSAFLUSH, &tio_new) == -1)
     perror("tcsetattr");
 }
 
@@ -221,19 +277,18 @@ main(int argc, char *argv[]) {
     usage();
 
   initialize();
+  find_listener();
+  key_timer_disarm();
 
-  int quit = 0;
   while (1) {
-    unsigned char buf[16];
-
-    int n = read(ifd, buf, 1);
-    if (n == 1) {
+    unsigned char buf[8];
+    if (read(ifd, buf, 1) == 1) {
       if (esc) {
         if (buf[0] == '[') {
           csi_pend = 1;
         }
         else if (csi_pend) {
-          timer_disarm();
+          key_timer_disarm();
           esc = csi_pend = 0;
           do_write("\033[", 2);
           do_write(buf, 1);
@@ -245,20 +300,28 @@ main(int argc, char *argv[]) {
           }
           esc = 0;
         }
-        quit = 0;
-      }
-      else if (buf[0] == 033) {
-        timer_arm();
-        esc = 1;
-        quit = 0;
-      }
-      else if (buf[0] == 0) {
-        if (++quit >= 3) break;
       }
       else {
-        do_write(buf, 1);
-        quit = 0;
+        switch(buf[0]) {
+        case 033: /* ESC */
+          key_timer_arm();
+          esc = 1;
+          break;
+        case 3: /* Ctrl-C */
+          key_timer_disarm();
+          if (listener)
+            kill(listener, SIGINT);
+          else {
+            finalize();
+            exit(0);
+          }
+          break;
+        default:
+          key_timer_disarm();
+          do_write(buf, 1);
+        }
       }
+
       if (!esc)
         tcflush(ofd, TCOFLUSH);
     }
@@ -267,6 +330,5 @@ main(int argc, char *argv[]) {
   }
 
   finalize();
-
   exit(0);
 }
