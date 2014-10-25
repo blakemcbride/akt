@@ -58,10 +58,6 @@ I have no intention to "fix" issues around the key timer; it would
 require a much more sophisticated state machine than is warranted by
 the nature of the "problem".
 
-Some terminal emulators offer a mode in which the Alt key sets bit 7
-(the most significant bit) of the sent character. `akt` also handles
-this input.
-
 `akt` has an atypical exit protocol: when piped into another program,
 `akt` quits when its output pipe disappears or the receiving program
 disappears.

@@ -1,0 +1,12 @@
+- "Alt sets MSB" input can't be easily translated to Unicode due to
+  issues with copy/paste. When pasting Unicode, all of an APL
+  character's octets will have their MSBs set. Depending on the
+  codepoint after masking off the MSB, each octet will either get
+  mistranslated as an APL character or dropped because it doesn't have
+  an entry in akt's map.
+
+  The only way to correctly handle this situation is with a state
+  machine to recognize Unicode and pass it through to the output
+  unaltered. Given the prevalence of Unicode and the obsolescence of
+  "Alt sets MSB" encodings, akt will not support this mode of
+  operation.

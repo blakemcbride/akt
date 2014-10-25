@@ -1,5 +1,11 @@
 2014-10-24  David B. Lamkins  <david@lamkins.net>
 
+	* akt.c (usage, main): Version 1.2.1: Pulled out the Alt-sets-MSB
+	input support, which is fundamentally incompatible with copy/paste
+	of UTF-8. See NOTES for further explanation.
+
+2014-10-24  David B. Lamkins  <david@lamkins.net>
+
 	* akt.c (usage, main): Version 1.2: Command line option -n causes
 	akt to pass Ctrl-C to output rather than signaling the listener.
 	Input is now checked to confirm that it's a terminal. Input

@@ -8,23 +8,23 @@
   `showkey` code are *not* coincidental.
 */
   
-#include <stdio.h>
-#include <termios.h>
-#include <locale.h>
-#include <stdlib.h>
+#include <errno.h>
 #include <libintl.h>
+#include <locale.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <termios.h>
+#include <unistd.h>
+#include <linux/limits.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <signal.h>
-#include <errno.h>
-#include <linux/limits.h>
 
 #define PACKAGE "akt"
 #define LOCALEDIR "."
-#define VERSION "1.2"
+#define VERSION "1.2.1"
 
 static void
 usage(void) {
@@ -43,10 +43,6 @@ usage(void) {
         "sends escape\". Disable Alt key acccess to your terminal\n"
         "emulator's menus. Then hold down the Alt key to type APL\n"
         "characters.\n"
-        "\n"
-        "Alternatively, some older terminal emulators set bit 7 of\n"
-        "a typed character when the Alt key is pressed. " PACKAGE " also\n"
-        "translates this input.\n"
         "\n"
         "Some programs disable the SIGINT signal. Invoke " PACKAGE " with\n"
         "the -n option for these programs. For example:\n"
@@ -314,13 +310,6 @@ main(int argc, char *argv[]) {
           }
           esc = 0;
         }
-      }
-      else if (buf[0] & 0x80) {
-        const char *t = map[buf[0] & 0x7f];
-        if (t) {
-          do_write(t, strlen(t));
-        }
-        esc = csi_pend = 0;
       }
       else {
         switch(buf[0]) {
