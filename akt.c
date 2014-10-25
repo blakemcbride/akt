@@ -24,11 +24,13 @@
 
 #define PACKAGE "akt"
 #define LOCALEDIR "."
-#define VERSION "1.1"
+#define VERSION "1.2"
 
 static void
 usage(void) {
   fputs(PACKAGE " (APL Keyboard Translator) version " VERSION "\n"
+        "\n"
+        PACKAGE "'s input must be a terminal.\n"
         "\n"
         "You can use " PACKAGE " with any program that accepts UTF-8\n"
         "encoded characters on stdin.\n"
@@ -40,7 +42,16 @@ usage(void) {
         "you use the Alt key. This is often described as \"meta\n"
         "sends escape\". Disable Alt key acccess to your terminal\n"
         "emulator's menus. Then hold down the Alt key to type APL\n"
-        "characters.\n",
+        "characters.\n"
+        "\n"
+        "Alternatively, some older terminal emulators set bit 7 of\n"
+        "a typed character when the Alt key is pressed. " PACKAGE " also\n"
+        "translates this input.\n"
+        "\n"
+        "Some programs disable the SIGINT signal. Invoke " PACKAGE " with\n"
+        "the -n option for these programs. For example:\n"
+        "  $ " PACKAGE " -n | nano\n"
+        ,
         stderr);
   exit(1);
 }
@@ -273,7 +284,10 @@ initialize(void) {
 
 int
 main(int argc, char *argv[]) {
-  if (argc > 1)
+  int ctrl_c_pass = argc > 1 && !strcmp(argv[1], "-n");
+
+  if ((argc > 1 && !ctrl_c_pass) ||
+      !isatty(ifd))
     usage();
 
   initialize();
@@ -301,6 +315,13 @@ main(int argc, char *argv[]) {
           esc = 0;
         }
       }
+      else if (buf[0] & 0x80) {
+        const char *t = map[buf[0] & 0x7f];
+        if (t) {
+          do_write(t, strlen(t));
+        }
+        esc = csi_pend = 0;
+      }
       else {
         switch(buf[0]) {
         case 033: /* ESC */
@@ -309,7 +330,9 @@ main(int argc, char *argv[]) {
           break;
         case 3: /* Ctrl-C */
           key_timer_disarm();
-          if (listener)
+          if (ctrl_c_pass)
+            do_write(buf, 1);
+          else if (listener)
             kill(listener, SIGINT);
           else {
             finalize();

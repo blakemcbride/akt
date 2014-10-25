@@ -1,3 +1,12 @@
+2014-10-24  David B. Lamkins  <david@lamkins.net>
+
+	* akt.c (usage, main): Version 1.2: Command line option -n causes
+	akt to pass Ctrl-C to output rather than signaling the listener.
+	Input is now checked to confirm that it's a terminal. Input
+	characters having MSB (bit 7) set are now translated to APL; this
+	means that older terminal emulators which use the MSB as the Alt
+	shift bit will be supported by akt.
+
 2014-10-23  David B. Lamkins  <david@lamkins.net>
 
 	* akt.c (handle_key_timer, find_listener, handle_watchdog_timer)

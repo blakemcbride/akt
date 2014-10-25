@@ -12,6 +12,8 @@ $ akt | apl
 When you invoke `apl` this way, you will be able to type APL glyphs
 using the Alt key.
 
+`akt`'s input must be a terminal.
+
 `akt` takes advantage of the fact that many terminal emulators are
 capable of generating Emacs-compatible character sequences, in which
 `Alt-char` (or, using Emacs terminology: `M-char`) emits the sequence
@@ -56,6 +58,10 @@ I have no intention to "fix" issues around the key timer; it would
 require a much more sophisticated state machine than is warranted by
 the nature of the "problem".
 
+Some terminal emulators offer a mode in which the Alt key sets bit 7
+(the most significant bit) of the sent character. `akt` also handles
+this input.
+
 `akt` has an atypical exit protocol: when piped into another program,
 `akt` quits when its output pipe disappears or the receiving program
 disappears.
@@ -63,6 +69,14 @@ disappears.
 When `akt`'s output is piped, a Ctrl-C received by `akt` sends a
 SIGINT to the process on the receiving end of the pipe; the Ctrl-C
 does *not* terminate `akt`.
+
+Some programs disable the SIGINT signal, expecting to receive a typed
+Ctrl-C character. To use `atk` with these programs pass the `-n` ("no
+signal") option to `akt`. For example:
+
+```
+$ akt -n | nano
+```
 
 `akt` compiles and runs on my Fedora 20 Linux boxes. It is also
 reported to have compiled and run on a LinuxMint x64 box. I make no
