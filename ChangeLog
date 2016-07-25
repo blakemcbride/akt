@@ -1,3 +1,12 @@
+2016-07-24  David B. Lamkins  <david@lamkins.net>
+
+	* Version 2.0. Rewritten to spawn its client behind a pty, thus
+	eliminating the need for compatibility options. The invocation
+	has changed to (for example) `akt apl`; the pipe is no longer used.
+
+	The state machine has been completely rewritten, fixing many known
+	bugs and annoyances.
+
 2014-10-24  David B. Lamkins  <david@lamkins.net>
 
 	* akt.c (usage, main): Version 1.2.1: Pulled out the Alt-sets-MSB

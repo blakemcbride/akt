@@ -1,12 +1,23 @@
-- "Alt sets MSB" input can't be easily translated to Unicode due to
-  issues with copy/paste. When pasting Unicode, all of an APL
-  character's octets will have their MSBs set. Depending on the
-  codepoint after masking off the MSB, each octet will either get
-  mistranslated as an APL character or dropped because it doesn't have
-  an entry in akt's map.
+akt NOTES
+=========
 
-  The only way to correctly handle this situation is with a state
-  machine to recognize Unicode and pass it through to the output
-  unaltered. Given the prevalence of Unicode and the obsolescence of
-  "Alt sets MSB" encodings, akt will not support this mode of
-  operation.
+Is there a catch? Of course. There always is... Modern terminal emulators
+send cursor keys as a sequence of characters beginning with a "control
+sequence introducer" (CSI) -- the characters `ESC [` -- or with the the
+sequence `ESC O` (commonly sent by arrow keys).
+
+`akt`'s keyboard mapping uses `Alt [` to produce the `←` character. Yes,
+this is exactly the same as the CSI. `akt` attempts to disambiguate
+the two cases by looking at the timing of the next character to arrive.
+If 20 ms passes with no further input after the `Alt [`, `akt` assumes
+that the sequence should translate to `←`. If `akt` receives another
+character within 20 ms of `Alt [`, it assumes that the next character
+is really following a CSI; `akt` then passes the CSI and subsequent
+characters to the output untranslated.
+
+This timing-based approach works well for the most part. The approach can
+fall apart, though, on a system suffering from high load or if you've just
+arrived from 1980 and are accessing your system across a slow serial line.
+
+Certain older terminal emulators may offer an "Alt sets MSB" option. This
+is incompatible with `akt`.

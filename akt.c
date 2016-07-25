@@ -1,58 +1,25 @@
 /*
-  APL Key Translation for use with GNU APL
+  APL Key Translation (version 2) for use with GNU APL
 
   David B. Lamkins <david@lamkins.net>
-  October 2014
-
-  Resemblances between some portions of this code and the Linux
-  `showkey` code are *not* coincidental.
+  July 2016
 */
   
-#include <errno.h>
-#include <libintl.h>
-#include <locale.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <termios.h>
 #include <unistd.h>
-#include <linux/limits.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/types.h>
+#include <errno.h>
+#include <sys/ioctl.h>
+#include <signal.h>
+#include <locale.h>
+#include <string.h>
+#include <sys/select.h>
+#include <pty.h>
+#include <langinfo.h>
 
 #define PACKAGE "akt"
-#define LOCALEDIR "."
-#define VERSION "1.3"
-
-static const char* info="#: APL Keyboard Translator";
-
-static void
-usage(void) {
-  fputs(PACKAGE " (APL Keyboard Translator) version " VERSION "\n"
-        "\n"
-        PACKAGE "'s input must be a terminal.\n"
-        "\n"
-        "You can use " PACKAGE " with any program that accepts UTF-8\n"
-        "encoded characters on stdin.\n"
-        "\n"
-        "Use with GNU APL as:\n"
-        "  $ " PACKAGE " | apl\n"
-        "\n"
-        "Set your terminal emulator to send an ESC prefix when\n"
-        "you use the Alt key. This is often described as \"meta\n"
-        "sends escape\". Disable Alt key acccess to your terminal\n"
-        "emulator's menus. Then hold down the Alt key to type APL\n"
-        "characters.\n"
-        "\n"
-        "Some programs disable the SIGINT signal. Invoke " PACKAGE " with\n"
-        "the -n option for these programs. For example:\n"
-        "  $ " PACKAGE " -n | nano\n"
-        ,
-        stderr);
-  exit(1);
-}
+#define VERSION "2.0"
 
 static const char* map[128] = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /* control chars */
@@ -83,108 +50,111 @@ static const char* map[128] = {
   "⊣", /* | */ "⍬", /* } */ 0,   /* ~ */ 0,   /* DEL */
 };
 
-static int ifd = 0, ofd = 1;
+static const size_t oc[128] = {
+  /* OCTBL-BEGIN -- generated; do not edit! */
+  /* !GEN! */  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  /* !GEN! */  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  /* !GEN! */  0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3,
+  /* !GEN! */  3, 2, 2, 1, 3, 1, 3, 1, 3, 3, 3, 3, 3, 2, 3, 3,
+  /* !GEN! */  3, 3, 2, 3, 3, 3, 0, 0, 0, 3, 3, 3, 3, 0, 0, 3,
+  /* !GEN! */  3, 0, 0, 0, 3, 3, 0, 3, 2, 2, 0, 3, 3, 3, 3, 1,
+  /* !GEN! */  3, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 1, 3, 1, 3, 3,
+  /* !GEN! */  3, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0,
+};
 
-static void
-do_write(const void *buf, size_t len) {
-  int rc;
-  do {
-    errno = 0;
-    rc = write(ofd, buf, len);
-  } while (rc == -1 && (errno == EINTR || errno == EAGAIN));
-  if (rc == -1)
-    perror("write");
-}
+#define MAX_UTF8_OCTETS 4 /* RFC 3269 */
 
-static int esc = 0, csi_pend = 0;
+#ifdef GENOCTBL
 
-static void
-handle_key_timer(int signal) {
-  if (csi_pend) {
-    const char *t = map['['];
-    do_write(t, strlen(t));
+int
+main(int argc, char *argv[]) {
+  int i;
+  const char *c;
+  size_t l;
+  int rc = 0;
+
+  for (i = 0; i < 128; ++i) {
+    c = map[i];
+    if (i%16 == 0) printf("  /* !%s! */ ", "GEN");
+    l = c ? strlen(c) : 0;
+    if (l > MAX_UTF8_OCTETS) {
+      fprintf(stderr, "error at index %d\n", i);
+      rc = 1;
+    }
+    printf(" %ld,", l);
+    if (i%16 == 15) putchar('\n');
   }
-  else if (esc)
-    do_write("\033", 1);
-  esc = csi_pend = 0;
+
+  exit(rc);
 }
+
+#else
+
+static const char* info="#: APL Keyboard Translator";
+
+static void
+usage(void) {
+  const char* ignore = info;
+  fputs(PACKAGE " (APL Keyboard Translator) version " VERSION "\n"
+        "\n"
+        "usage: " PACKAGE " CMD [ARGS...]\n"
+        "\n"
+        PACKAGE "'s input must be a terminal. Your locale must use a\n"
+        "UTF-8 encoding.\n"
+        "\n"
+        "CMD with its ARGS is spawned as a slave to a pty. " PACKAGE "\n"
+        "translates Alt+key keystrokes to APL Unicode characters\n"
+        "and passes all other keystrokes unaltered.\n"
+        "\n"
+        "Use with GNU APL as:\n"
+        "  $ " PACKAGE " apl ...\n"
+        "\n"
+        "Set your terminal emulator to send an ESC prefix when\n"
+        "you use the Alt key. This is often described as \"meta\n"
+        "sends escape\". Disable Alt key acccess to your terminal\n"
+        "emulator's menus.\n"
+        ,
+        stderr);
+  exit(1);
+  /* NOTREACHED */
+}
+
+static int ifd = 0;
 
 static struct termios tio_old;
 
 static void
 finalize(void) {
   if (tcsetattr(ifd, 0, &tio_old) == -1)
-    perror("tcsetattr");
+    perror("finalize/tcsetattr");
 }
 
-static pid_t listener = 0;
+static int master;
 
 static void
-find_listener(void) {
-  pid_t mypid = getpid();
-  const char *pathfmt = "/proc/%u/fd/%u";
-  char path[PATH_MAX], slink[PATH_MAX], rlink[PATH_MAX];
-  snprintf(path, PATH_MAX, pathfmt, mypid, ofd);
-  if (readlink(path, slink, PATH_MAX) == -1)
-    perror("readlink:slink");
-  if (!strncmp(slink, "pipe:[", 6)) {
-    pid_t tpid = mypid;
-    FILE *pmfd = fopen("/proc/sys/kernel/pid_max", "r");
-    pid_t maxpid = 0;
-    fscanf(pmfd, "%u", &maxpid);
-    fclose(pmfd);
-    int i = 10;
-    while (i) {
-      if (tpid == maxpid) tpid = 1;
-      snprintf(path, PATH_MAX, pathfmt, ++tpid, ifd);
-      if (readlink(path, rlink, PATH_MAX) == -1)
-        continue;
-      if (!strncmp(slink, rlink, PATH_MAX)) break;
-      --i;
-    }
-    if (i) listener = tpid;
-  }
+conform_window_size() {
+  struct winsize ws;
+  if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1)
+    perror("conform_window_size/ioctl:TIOCGWINSZ");
+  if (ioctl(master, TIOCSWINSZ, &ws) == -1)
+    perror("conform_window_size/ioctl:TIOCSWINSZ");
 }
 
 static void
-handle_watchdog_timer(int signal) {
-  if (listener) {
-    char path[PATH_MAX];
-    snprintf(path, PATH_MAX, "/proc/%u", listener);
-    struct stat sbuf;
-    if (stat(path, &sbuf) == -1) {
-      finalize();
-      exit(0);
-    }
-  }
+winch_handler(int signal) {
+  conform_window_size();
 }
 
 static void
-key_timer_arm(void) {
-  if (signal(SIGALRM, handle_key_timer) == SIG_ERR)
-    perror("key_timer_arm/signal");
+set_handlers() {
+  struct sigaction handler;
 
-  struct itimerval timer = { 0 };
-  timer.it_value.tv_usec = 50000;
-  if (setitimer(ITIMER_REAL, &timer, NULL) == -1)
-    perror("key_timer_arm/setitimer");
-}
-
-static void
-key_timer_disarm(void) {
-  struct itimerval timer = { 0 };
-  if (setitimer(ITIMER_REAL, &timer, NULL) == -1)
-    perror("key_timer_disarm/setitimer:key");
-
-  if (listener) {
-    if (signal(SIGALRM, handle_watchdog_timer) == SIG_ERR)
-      perror("key_timer_disarm/signal");
-
-    timer.it_value.tv_usec = 200000;
-    timer.it_interval.tv_usec = 200000;
-    if (setitimer(ITIMER_REAL, &timer, NULL) == -1)
-      perror("key_timer_disarm/setitimer:watchdog");
-  }
+  if (sigfillset(&handler.sa_mask) == -1)
+    perror("set_handlers/sigfillset");
+  handler.sa_handler = winch_handler;
+  handler.sa_flags = 0;
+  if (sigaction(SIGWINCH, &handler, 0) == -1)
+    perror("set_handlers/sigaction:SIGWINCH");
 }
 
 static void
@@ -192,11 +162,9 @@ initialize(void) {
   struct termios tio_new;
 
   setlocale(LC_ALL, "");
-  bindtextdomain(PACKAGE, LOCALEDIR);
-  textdomain(PACKAGE);
 
   if (tcgetattr(ifd, &tio_old) == -1)
-    perror("tcgetattr");
+    perror("initialize/tcgetattr");
   memcpy(&tio_new, &tio_old, sizeof(struct termios));
 
   tio_new.c_lflag &= ~ (ICANON | ISIG | ECHO | ECHOCTL);
@@ -205,72 +173,238 @@ initialize(void) {
   tio_new.c_cc[VTIME] = 0;
 
   if (tcsetattr(ifd, TCSAFLUSH, &tio_new) == -1)
-    perror("tcsetattr");
+    perror("initialize/tcsetattr");
+}
+
+static int
+do_write(int fd, const void *buf, size_t len) {
+  int rc = 0;
+
+  if (len > 0) {
+    do {
+      errno = 0;
+      rc = write(fd, buf, len);
+    } while (rc == -1 && (errno == EINTR || errno == EAGAIN));
+  }
+
+  return rc;
+}
+
+static int
+do_read(int fd, void *buf, size_t len) {
+   int rc;
+
+   do {
+     errno = 0;
+     rc = read(fd, buf, len);
+   } while (rc == -1 && errno == EINTR);
+
+   return rc;
+}
+
+typedef enum { s_pass, s_esc, s_csi, s_O } state_t;
+static state_t state = s_pass;
+
+typedef char mapped_t[MAX_UTF8_OCTETS+1];
+
+static char ESC = 033;
+
+static void
+next(state_t follow, size_t *len) {
+  state = follow;
+  *len = 0;
+}
+
+static void
+emit(char input, mapped_t mapped, size_t *len) {
+  mapped[0] = input;
+  *len = 1;
+}
+
+static void
+flush_prefix(state_t next) {
+  const char *t;
+  size_t l;
+
+  if (state == s_csi) {
+    t = map['['];
+    l = oc['['];
+  }
+  else if (state == s_O) {
+    t = map['O'];
+    l = oc['O'];
+  }
+  else if (state == s_esc) {
+    t = &ESC;
+    l = 1;
+  }
+  else
+    return;
+  do_write(master, t, l);
+  state = next;
+}
+
+static void
+pass_xlate(char input, mapped_t mapped, size_t *len) {
+  const char *t;
+
+  t = map[input];
+  if (t) {
+    memcpy(mapped, t, *len = oc[input]);
+  }
+  else
+    *len = 0;
+  state = s_pass;
+}
+
+static void
+pass_seq(char c1, char c2, mapped_t mapped, size_t *len) {
+  mapped[0] = ESC;
+  mapped[1] = c1;
+  mapped[2] = c2;
+  *len = 3;
+  state = s_pass;
+}
+
+static void
+process(char input, mapped_t mapped, size_t *len) {
+  if (input&0x80)
+    emit(input, mapped, len);
+  else if (state == s_pass) {
+    if (input == ESC)
+      next(s_esc, len);
+    else
+      emit(input, mapped, len);
+  }
+  else {
+    if (state == s_esc) {
+      if (input == '[')
+        next(s_csi, len);
+      else if (input == 'O')
+        next(s_O, len);
+      else
+        pass_xlate(input, mapped, len);
+    }
+    else if (state == s_csi) {
+      if (input == ESC)
+        flush_prefix(s_esc);
+      else
+        pass_seq('[', input, mapped, len);
+    }
+    else if (state == s_O) {
+      if (input == ESC)
+        flush_prefix(s_esc);
+      else
+        pass_seq('O', input, mapped, len);
+    }
+    else
+      pass_xlate(input, mapped, len);
+  }
+}
+
+static void
+handle_key_timer() {
+  flush_prefix(s_pass);
+}
+
+static int
+master_to_slave() {
+  char output;
+
+  if (do_read(master, &output, 1) == -1) {
+    if (errno == EIO) /* EIO when child dies */
+      return 0;
+    else
+      perror("master_to_slave/do_read:master");
+  }
+  if (do_write(STDOUT_FILENO, &output, 1) == -1)
+    perror("master_to_slave/do_write:STDOUT_FILENO");
+  return 1;
+}
+
+static void
+slave_to_master() {
+  char input;
+  mapped_t mapped;
+  size_t len;
+
+  if (do_read(STDIN_FILENO, &input, 1) == -1)
+    perror("slave_to_master/do_read:STDIN_FILENO");
+  else {
+    process(input, mapped, &len);
+    if (do_write(master, mapped, len) == -1)
+      perror("slave_to_master/do_write:master");
+  }
+}
+
+static int
+ioloop() {
+  struct timeval timer;
+  int rc;
+  fd_set read_fd;
+  fd_set write_fd;
+  fd_set except_fd;
+
+  FD_ZERO(&read_fd);
+  FD_ZERO(&write_fd);
+  FD_ZERO(&except_fd);
+  FD_SET(master, &read_fd);
+  FD_SET(STDIN_FILENO, &read_fd);
+  timer.tv_sec = 0;
+  timer.tv_usec = 20000;
+  do {
+    errno = 0;
+    rc = select(master+1, &read_fd, &write_fd, &except_fd, &timer);
+  } while (rc == -1 && errno == EINTR);
+  if (rc == 0)
+    handle_key_timer();
+  else if (rc == -1)
+    perror("ioloop/select");
+  if (FD_ISSET(master, &read_fd)) {
+    if (!master_to_slave())
+      return 0;
+  }
+  if (FD_ISSET(STDIN_FILENO, &read_fd))
+    slave_to_master();
+  return 1;
+}
+
+static void
+spawn(char *args[]) {
+  pid_t pid = forkpty(&master, NULL, NULL, NULL);
+  if (pid < 0) {
+    perror("spawn/forkpty");
+  }
+  else if (pid == 0) {
+    /* child */
+    if (execvp(args[1], &args[1]) == -1) {
+      perror("spawn/execvp");
+      exit(1);
+      /* NOTREACHED */
+    }
+  }
+  else {
+    /* parent */
+    initialize();
+    set_handlers();
+    conform_window_size();
+
+    while (ioloop()) {}
+
+    finalize();
+  }
 }
 
 int
 main(int argc, char *argv[]) {
-  int ctrl_c_pass = argc > 1 && !strcmp(argv[1], "-n");
-
-  if ((argc > 1 && !ctrl_c_pass) ||
-      !isatty(ifd))
+  if (!isatty(ifd) || argc == 1 || !strcmp(nl_langinfo(CODESET), "UTF-8")) {
     usage();
-
-  initialize();
-  find_listener();
-  key_timer_disarm();
-
-  while (1) {
-    unsigned char buf[8];
-    if (read(ifd, buf, 1) == 1) {
-      if (esc) {
-        if (buf[0] == '[') {
-          csi_pend = 1;
-        }
-        else if (csi_pend) {
-          key_timer_disarm();
-          esc = csi_pend = 0;
-          do_write("\033[", 2);
-          do_write(buf, 1);
-        }
-        else {
-          const char *t = map[buf[0]];
-          if (t) {
-            do_write(t, strlen(t));
-          }
-          esc = 0;
-        }
-      }
-      else {
-        switch(buf[0]) {
-        case 033: /* ESC */
-          key_timer_arm();
-          esc = 1;
-          break;
-        case 3: /* Ctrl-C */
-          key_timer_disarm();
-          if (ctrl_c_pass)
-            do_write(buf, 1);
-          else if (listener)
-            kill(listener, SIGINT);
-          else {
-            finalize();
-            exit(0);
-          }
-          break;
-        default:
-          key_timer_disarm();
-          do_write(buf, 1);
-        }
-      }
-
-      if (!esc)
-        tcflush(ofd, TCOFLUSH);
-    }
-    else
-      break;
+    /* NOTREACHED */
   }
 
-  finalize();
+  spawn(argv);
+
   exit(0);
 }
+
+#endif
