@@ -27,6 +27,8 @@ encoding.
 and the specified command is the slave. The slave's terminal size
 automatically adjusts to conform to the master's terminal size.
 
+Use the `-z` option to suppress the action of the suspend character.
+
 `akt` depends upon your terminal emulator sending the two-character
 sequence `ESC <char>` when you hold the `Alt` key and type `<char>`.
 The ability for a terminal to do so may be a configurable option, often
