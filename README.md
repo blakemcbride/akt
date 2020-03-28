@@ -1,3 +1,7 @@
+Note:  This package was created by David B. Lamkins.  Since I use it often
+and it has disappeared form github, I took the liberty of hosting his
+package unmodified.
+
 APL Keyboard Translator
 =======================
 
