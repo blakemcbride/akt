@@ -20,6 +20,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+#define DEBUG 0
 #define PACKAGE "akt"
 #define VERSION "2.1"
 
@@ -226,12 +227,20 @@ set_handlers() {
 static int
 do_write(int fd, const void *buf, size_t len) {
   int rc = 0;
+   FILE *fp1;
 
   if (len > 0) {
     do {
       errno = 0;
       rc = write(fd, buf, len);
     } while (rc == -1 && (errno == EINTR || errno == EAGAIN));
+#if DEBUG
+    if (rc == -1) {
+       fp1=fopen("log.txt", "a");
+       fprintf(fp1, "errno = %d\n", errno);
+       fclose(fp1);
+    }
+#endif
   }
 
   return rc;
@@ -359,7 +368,7 @@ master_to_client() {
   char output;
 
   if (do_read(master, &output, 1) == -1) {
-    if (errno == EIO) /* EIO when child dies */
+    if ((errno == EIO) || (errno == EPIPE)) /* EIO when child dies */
       return 0;
     else
       perror("master_to_slave/do_read:master");
@@ -376,6 +385,7 @@ client_to_master() {
   char input;
   mapped_t mapped;
   size_t len;
+  int rc=0;
 
   if (do_read(STDIN_FILENO, &input, 1) == -1)
     perror("slave_to_master/do_read:STDIN_FILENO");
@@ -383,8 +393,11 @@ client_to_master() {
     if (input == tio_old.c_cc[VSUSP] && nosuspend)
       return;
     process_key(input, mapped, &len);
-    if (do_write(master, mapped, len) == -1)
+    rc=do_write(master, mapped, len);
+    if ((rc == -1) && (errno != EIO))
       perror("slave_to_master/do_write:master");
+    if (errno == EIO)
+      exit(0);
   }
 }
 
